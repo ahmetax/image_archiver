@@ -1,2 +1,2 @@
-# image_atchiver
-Image Archiver with Semantic Search
+# image_archiver
+Image Archiver with Llava and Semantic Search
