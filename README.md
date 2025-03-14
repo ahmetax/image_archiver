@@ -21,8 +21,8 @@ This is a Flask-based web application that scans directories for images, uses th
 
 1. Clone this repository:
    ```
-   git clone https://github.com/yourusername/image-archiver.git
-   cd image-archiver
+   git clone https://github.com/ahmetax/image_archiver.git
+   cd image_archiver
    ```
 
 2. Create a virtual environment and install dependencies:
@@ -51,7 +51,7 @@ This is a Flask-based web application that scans directories for images, uses th
 
 6. Open your browser and navigate to:
    ```
-   http://localhost:5000
+   http://localhost:5555
    ```
 
 ## Usage
