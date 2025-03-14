@@ -1,0 +1,6 @@
+I want to prepare an Image archiver. I will use python and flask. I will use llava:latest model with ollama server on localhost.
+1- The project will scan the given folder and sub-folders to find the image files, and using ollama-llava model, it will get detailed decriptions of these images. The descriptions and other data will be saved in an sqlite database. The description of an image must be exactly the same in different scans even if it has different filenames.
+2- The images should be filtered by using sql queries.
+3- The images should be filtered by semantic search also.
+4- The project language will be English.
+

@@ -1,0 +1,662 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Archiver</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+
+
+    <style>
+        .image-card {
+            height: 300px;
+            margin-bottom: 20px;
+        }
+        .image-card img {
+            max-height: 150px;
+            object-fit: contain;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 2s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .search-tabs {
+            margin-bottom: 20px;
+        }
+        #stats {
+            margin-bottom: 20px;
+        }
+        .description-text {
+            max-height: 100px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">Image Archiver</h1>
+        
+        <!-- Stats Section -->
+        <div id="stats" class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Database Statistics</h5>
+                <div id="stats-content">
+                    <p>Loading stats...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Database Management</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <strong>Warning:</strong> Resetting the database will delete all existing image records and create a fresh database.
+                    Make sure to backup your data first.
+                </div>
+                <button id="resetDbBtn" class="btn btn-danger">Reset Database</button>
+                <div id="resetStatus" class="mt-3"></div>
+            </div>
+        </div>
+
+        <!-- Scan Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Scan Directory</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="directoryPath" class="form-label">Directory Path</label>
+                    <input type="text" class="form-control" id="directoryPath" value="" placeholder="/path/to/images">
+                    <small class="form-text text-muted">Enter the full path to the directory containing your images</small>
+                </div>
+                <button id="scanBtn" class="btn btn-primary">Start Scan</button>
+                
+                <div id="scanResults" class="mt-3 d-none">
+                    <div id="scanProgress" class="mb-3 d-none">
+                        <h6>Scan Progress</h6>
+                        <div class="progress mb-2">
+                            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <small id="progressText">0/0 images processed</small>
+                            <small id="progressPercentage">0%</small>
+                        </div>
+                        <div class="mt-2">
+                            <small id="currentImageText">Preparing scan...</small>
+                        </div>
+                        <div class="mt-1">
+                            <small><strong>New images:</strong> <span id="newImagesCount">0</span></small>
+                            <small class="ms-3"><strong>Updated images:</strong> <span id="updatedImagesCount">0</span></small>
+                        </div>
+                    </div>
+                    <div id="scanLoader" class="loader"></div>
+                    <div id="scanStatus"></div>
+                </div>
+
+
+
+            </div>
+        </div>
+        
+        <!-- Search Section -->
+        <div class="card">
+            <div class="card-header">
+                <h5>Search Images</h5>
+            </div>
+            <div class="card-body">
+                <!-- Search Tabs -->
+                <ul class="nav nav-tabs search-tabs" id="searchTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="sql-tab" data-bs-toggle="tab" data-bs-target="#sql" type="button" role="tab" aria-controls="sql" aria-selected="true">SQL Search</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="semantic-tab" data-bs-toggle="tab" data-bs-target="#semantic" type="button" role="tab" aria-controls="semantic" aria-selected="false">Semantic Search</button>
+                    </li>
+                </ul>
+                
+                <!-- Tab Content -->
+                <div class="tab-content mt-3" id="searchTabContent">
+                    <!-- SQL Search Tab -->
+                    <div class="tab-pane fade show active" id="sql" role="tabpanel" aria-labelledby="sql-tab">
+                        <div class="mb-3">
+                            <label for="sqlQuery" class="form-label">SQL Query</label>
+                            <textarea class="form-control" id="sqlQuery" rows="3" placeholder="SELECT * FROM images WHERE description LIKE '%nature%' LIMIT 10"></textarea>
+                            <div class="form-text">
+                                Available columns: id, file_path, file_name, hash, file_size, width, height, format, description, scan_date
+                            </div>
+                        </div>
+                        <button id="sqlSearchBtn" class="btn btn-primary">Search</button>
+                    </div>
+                    
+                    <!-- Semantic Search Tab -->
+                    <div class="tab-pane fade" id="semantic" role="tabpanel" aria-labelledby="semantic-tab">
+                        <div class="mb-3">
+                            <label for="semanticQuery" class="form-label">Search Text</label>
+                            <input type="text" class="form-control" id="semanticQuery" placeholder="outdoor scenes with mountains">
+                        </div>
+                        <div class="mb-3">
+                            <label for="resultLimit" class="form-label">Result Limit</label>
+                            <input type="number" class="form-control" id="resultLimit" value="20" min="1" max="100">
+                        </div>
+                        <button id="semanticSearchBtn" class="btn btn-primary">Search</button>
+                    </div>
+                </div>
+                
+                <!-- Search Results -->
+                <div id="searchResults" class="mt-4 d-none">
+                    <h5>Search Results</h5>
+                    <div id="searchLoader" class="loader"></div>
+                    <div id="resultsCount" class="mb-3"></div>
+                    <div id="resultsContainer" class="row"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div class="modal fade" id="imageModal" tabindex="-1" aria-labelledby="imageModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="imageModalLabel">Image Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-center mb-3">
+                        <img id="modalImage" src="" alt="Image" class="img-fluid">
+                    </div>
+                    <div id="modalDetails"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load stats on page load
+            loadStats();
+            
+            // Scan Button Event
+            document.getElementById('scanBtn').addEventListener('click', function() {
+                const directory = document.getElementById('directoryPath').value.trim();
+                if (!directory) {
+                    alert('Please enter a directory path');
+                    return;
+                }
+                
+                startScan(directory);
+            });
+            
+            // SQL Search Button Event
+            document.getElementById('sqlSearchBtn').addEventListener('click', function() {
+                const query = document.getElementById('sqlQuery').value.trim();
+                if (!query) {
+                    alert('Please enter an SQL query');
+                    return;
+                }
+                
+                performSqlSearch(query);
+            });
+            
+            // Semantic Search Button Event
+            document.getElementById('semanticSearchBtn').addEventListener('click', function() {
+                const searchText = document.getElementById('semanticQuery').value.trim();
+                if (!searchText) {
+                    alert('Please enter search text');
+                    return;
+                }
+                
+                const limit = document.getElementById('resultLimit').value;
+                performSemanticSearch(searchText, limit);
+            });
+        });
+        
+        // Load database statistics
+        function loadStats() {
+            fetch('/stats')
+                .then(response => response.json())
+                .then(data => {
+                    const statsContent = document.getElementById('stats-content');
+                    statsContent.innerHTML = `
+                        <p><strong>Total Images:</strong> ${data.total_images}</p>
+                        <p><strong>Unique Images:</strong> ${data.unique_images}</p>
+                    `;
+                })
+                .catch(error => {
+                    console.error('Error loading stats:', error);
+                    document.getElementById('stats-content').innerHTML = '<p class="text-danger">Error loading statistics</p>';
+                });
+        }
+        
+        // Start directory scan
+        function startScan(directory) {
+            const scanResults = document.getElementById('scanResults');
+            const scanLoader = document.getElementById('scanLoader');
+            const scanStatus = document.getElementById('scanStatus');
+            
+            scanResults.classList.remove('d-none');
+            scanLoader.style.display = 'block';
+            scanStatus.innerHTML = '<p>Scanning directory. This may take some time...</p>';
+            
+            fetch('/scan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ directory: directory })
+            })
+            .then(response => response.json())
+            .then(data => {
+                scanLoader.style.display = 'none';
+                if (data.error) {
+                    scanStatus.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+                } else {
+                    scanStatus.innerHTML = `
+                        <p class="text-success">Scan completed successfully</p>
+                        <p><strong>Total Processed:</strong> ${data.total_processed}</p>
+                        <p><strong>New Images:</strong> ${data.new_images}</p>
+                        <p><strong>Updated Images:</strong> ${data.updated_images}</p>
+                    `;
+                    // Refresh stats
+                    loadStats();
+                }
+            })
+            .catch(error => {
+                console.error('Error during scan:', error);
+                scanLoader.style.display = 'none';
+                scanStatus.innerHTML = '<p class="text-danger">Error during scan. Check server logs.</p>';
+            });
+        }
+        
+        // Perform SQL search
+        function performSqlSearch(query) {
+            const searchResults = document.getElementById('searchResults');
+            const searchLoader = document.getElementById('searchLoader');
+            const resultsCount = document.getElementById('resultsCount');
+            const resultsContainer = document.getElementById('resultsContainer');
+            
+            searchResults.classList.remove('d-none');
+            searchLoader.style.display = 'block';
+            resultsCount.innerHTML = '';
+            resultsContainer.innerHTML = '';
+            
+            fetch('/search/sql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ query: query })
+            })
+            .then(response => response.json())
+            .then(data => {
+                searchLoader.style.display = 'none';
+                
+                if (data.error) {
+                    resultsCount.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+                    return;
+                }
+                
+                displaySearchResults(data);
+            })
+            .catch(error => {
+                console.error('Error during SQL search:', error);
+                searchLoader.style.display = 'none';
+                resultsCount.innerHTML = '<p class="text-danger">Error during search. Check server logs.</p>';
+            });
+        }
+        
+        // Perform semantic search
+        function performSemanticSearch(searchText, limit) {
+            const searchResults = document.getElementById('searchResults');
+            const searchLoader = document.getElementById('searchLoader');
+            const resultsCount = document.getElementById('resultsCount');
+            const resultsContainer = document.getElementById('resultsContainer');
+            
+            searchResults.classList.remove('d-none');
+            searchLoader.style.display = 'block';
+            resultsCount.innerHTML = '';
+            resultsContainer.innerHTML = '';
+            
+            fetch('/search/semantic', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    text: searchText,
+                    limit: parseInt(limit)
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                searchLoader.style.display = 'none';
+                
+                if (data.error) {
+                    resultsCount.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+                    return;
+                }
+                
+                displaySearchResults(data);
+            })
+            .catch(error => {
+                console.error('Error during semantic search:', error);
+                searchLoader.style.display = 'none';
+                resultsCount.innerHTML = '<p class="text-danger">Error during search. Check server logs.</p>';
+            });
+        }
+        
+        function displaySearchResults(results) {
+            const resultsCount = document.getElementById('resultsCount');
+            const resultsContainer = document.getElementById('resultsContainer');
+            
+            resultsCount.innerHTML = `<p>Found ${results.length} results</p>`;
+            
+            if (results.length === 0) {
+                resultsContainer.innerHTML = '<p>No results found.</p>';
+                return;
+            }
+            
+            resultsContainer.innerHTML = '';
+            
+            results.forEach((image, index) => {
+                const card = document.createElement('div');
+                card.className = 'col-md-4';
+                
+                // Create image path using our image serving route
+                const imgSrc = `/view-image/${image.id}`;
+                
+                // Format date
+                const scanDate = new Date(image.scan_date).toLocaleString();
+                
+                // Similarity score (if available from semantic search)
+                const similarityHtml = image.similarity !== undefined 
+                    ? `<p><strong>Similarity:</strong> ${(image.similarity * 100).toFixed(2)}%</p>` 
+                    : '';
+                
+                card.innerHTML = `
+                    <div class="card image-card">
+                        <div class="card-body">
+                            <div class="text-center mb-2">
+                                <img src="${imgSrc}" alt="${image.file_name}" class="img-thumbnail" 
+                                    onerror="this.onerror=null; this.src='/api/placeholder/150/150'; this.alt='Image preview not available';">
+                            </div>
+                            <h6 class="card-title text-truncate" title="${image.file_name}">${image.file_name}</h6>
+                            <div class="description-text">
+                                <small>${image.description ? image.description.substring(0, 100) : ''}${image.description && image.description.length > 100 ? '...' : ''}</small>
+                            </div>
+                            ${similarityHtml}
+                            <button class="btn btn-sm btn-primary mt-2 view-details" data-image-index="${index}">View Details</button>
+                        </div>
+                    </div>
+                `;
+                
+                resultsContainer.appendChild(card);
+            });
+            
+            // Store the results in a variable accessible to the click handler
+            window.searchResults = results;
+            
+            // Add event listeners to view details buttons
+            document.querySelectorAll('.view-details').forEach(button => {
+                button.addEventListener('click', function() {
+                    const index = parseInt(this.getAttribute('data-image-index'));
+                    const image = window.searchResults[index];
+                    showImageDetails(image);
+                });
+            });
+        }
+
+        // Update the showImageDetails function as well:
+        function showImageDetails(image) {
+            const modal = new bootstrap.Modal(document.getElementById('imageModal'));
+            const modalImage = document.getElementById('modalImage');
+            const modalDetails = document.getElementById('modalDetails');
+            
+            // Create image path using our image serving route
+            const imgSrc = `/view-image/${image.id}`;
+            
+            // Set modal image
+            modalImage.src = imgSrc;
+            modalImage.alt = image.file_name || 'Image';
+            modalImage.onerror = function() {
+                this.onerror = null;
+                this.src = '/api/placeholder/400/300';
+                this.alt = 'Image preview not available';
+            };
+            
+            // Format date
+            const scanDate = image.scan_date ? new Date(image.scan_date).toLocaleString() : 'Unknown';
+            
+            // Format file size
+            const fileSize = image.file_size ? formatFileSize(image.file_size) : 'Unknown';
+            
+            // Similarity score (if available from semantic search)
+            const similarityHtml = image.similarity !== undefined 
+                ? `<p><strong>Similarity:</strong> ${(image.similarity * 100).toFixed(2)}%</p>` 
+                : '';
+            
+            // Safely escape the description text to prevent HTML injection
+            const safeDescription = image.description 
+                ? image.description.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                : 'No description available';
+            
+            // Set modal details with proper escaping
+            modalDetails.innerHTML = `
+                <h5>${image.file_name || 'Unknown'}</h5>
+                <p><strong>Path:</strong> ${image.file_path || 'Unknown'}</p>
+                <p><strong>Size:</strong> ${fileSize} ${image.width && image.height ? `(${image.width} × ${image.height})` : ''}</p>
+                <p><strong>Format:</strong> ${image.format || 'Unknown'}</p>
+                <p><strong>Last Scan:</strong> ${scanDate}</p>
+                ${similarityHtml}
+                <p><strong>Description:</strong></p>
+                <div class="border p-2 bg-light description-container">
+                    ${safeDescription}
+                </div>
+            `;
+            
+            // Show modal
+            modal.show();
+        }
+
+
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+    </script>
+
+<script>
+    // Socket.IO connection
+    let socket = null;
+    
+    function initializeSocket() {
+        // Only initialize if not already connected
+        if (!socket) {
+            socket = io();
+            
+            // Listen for scan progress updates
+            socket.on('scan_progress', function(data) {
+                updateProgressUI(data);
+            });
+            
+            // Request initial progress
+            socket.emit('request_progress');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Socket.IO
+        initializeSocket();
+        
+        // Existing code...
+        
+        // Update the scan button event
+        document.getElementById('scanBtn').addEventListener('click', function() {
+            const directory = document.getElementById('directoryPath').value.trim();
+            if (!directory) {
+                alert('Please enter a directory path');
+                return;
+            }
+            
+            startScan(directory);
+        });
+        
+        // Rest of your existing code...
+    });
+    
+    // Start directory scan - update this function
+    function startScan(directory) {
+        const scanResults = document.getElementById('scanResults');
+        const scanProgress = document.getElementById('scanProgress');
+        const scanLoader = document.getElementById('scanLoader');
+        const scanStatus = document.getElementById('scanStatus');
+        
+        scanResults.classList.remove('d-none');
+        scanProgress.classList.remove('d-none');
+        scanLoader.style.display = 'block';
+        scanStatus.innerHTML = '<p>Initializing scan...</p>';
+        
+        // Reset progress UI
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressText').textContent = 'Preparing...';
+        document.getElementById('progressPercentage').textContent = '0%';
+        document.getElementById('currentImageText').textContent = 'Preparing scan...';
+        document.getElementById('newImagesCount').textContent = '0';
+        document.getElementById('updatedImagesCount').textContent = '0';
+        
+        fetch('/scan', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ directory: directory })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                scanProgress.classList.add('d-none');
+                scanLoader.style.display = 'none';
+                scanStatus.innerHTML = `<p class="text-danger">Error: ${data.error}</p>`;
+            } else {
+                scanStatus.innerHTML = `<p class="text-info">Scan started. Progress will update in real-time.</p>`;
+                // The real-time updates are handled by the Socket.IO connection
+            }
+        })
+        .catch(error => {
+            console.error('Error starting scan:', error);
+            scanProgress.classList.add('d-none');
+            scanLoader.style.display = 'none';
+            scanStatus.innerHTML = '<p class="text-danger">Error starting scan. Check server logs.</p>';
+        });
+    }
+    
+    // New function to update progress UI
+    function updateProgressUI(data) {
+        // Update progress elements
+        const scanLoader = document.getElementById('scanLoader');
+        const scanStatus = document.getElementById('scanStatus');
+        const scanProgress = document.getElementById('scanProgress');
+        
+        if (!data) return;
+        
+        // Calculate percentage
+        const percentage = data.total_images > 0 
+            ? Math.round((data.processed_images / data.total_images) * 100) 
+            : 0;
+        
+        // Update progress bar
+        document.getElementById('progressBar').style.width = `${percentage}%`;
+        document.getElementById('progressText').textContent = 
+            `${data.processed_images}/${data.total_images} images processed`;
+        document.getElementById('progressPercentage').textContent = `${percentage}%`;
+        
+        // Update current image
+        document.getElementById('currentImageText').textContent = 
+            data.current_image ? `Processing: ${data.current_image}` : 'Preparing...';
+        
+        // Update counts
+        document.getElementById('newImagesCount').textContent = data.new_images;
+        document.getElementById('updatedImagesCount').textContent = data.updated_images;
+        
+        // Handle different statuses
+        if (data.status === 'completed') {
+            scanLoader.style.display = 'none';
+            scanStatus.innerHTML = `
+                <p class="text-success">Scan completed successfully</p>
+                <p><strong>Total Processed:</strong> ${data.processed_images}</p>
+                <p><strong>New Images:</strong> ${data.new_images}</p>
+                <p><strong>Updated Images:</strong> ${data.updated_images}</p>
+            `;
+            // Refresh stats
+            loadStats();
+        } else if (data.status === 'error') {
+            scanLoader.style.display = 'none';
+            scanStatus.innerHTML = `<p class="text-danger">Error during scan: ${data.error_message || 'Unknown error'}</p>`;
+        }
+    }
+
+    // Other existing functions...
+</script>
+<script>
+    // Add this to your existing JavaScript
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add the reset database button handler
+        document.getElementById('resetDbBtn').addEventListener('click', function() {
+            if (confirm('Are you sure you want to reset the database? This will delete all existing image records.')) {
+                resetDatabase();
+            }
+        });
+    });
+    
+    // Function to reset the database
+    function resetDatabase() {
+        const resetStatus = document.getElementById('resetStatus');
+        resetStatus.innerHTML = '<p class="text-info">Resetting database...</p>';
+        
+        fetch('/reset-database', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                resetStatus.innerHTML = '<p class="text-success">Database reset successfully. A backup of the old database was created.</p>';
+                // Refresh stats
+                loadStats();
+            } else {
+                resetStatus.innerHTML = `<p class="text-danger">Error: ${data.error || 'Unknown error'}</p>`;
+            }
+        })
+        .catch(error => {
+            console.error('Error resetting database:', error);
+            resetStatus.innerHTML = '<p class="text-danger">Error resetting database. Check server logs.</p>';
+        });
+    }
+</script>
+</body>
+</html>

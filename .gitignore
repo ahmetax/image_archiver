@@ -135,6 +135,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+*.db
+*.backup
+*.log
 
 # Spyder project settings
 .spyderproject
